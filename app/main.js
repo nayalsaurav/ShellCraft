@@ -1,14 +1,17 @@
 const readline = require("node:readline/promises");
 const path = require("node:path");
 const fs = require("node:fs");
+const { spawn } = require("child_process");
+
 const rl = readline.createInterface({
   input: process.stdin,
   output: process.stdout,
 });
 
-let commands = ["type", "echo", "exit"];
-function isCommand(cmd) {
-  return commands.includes(cmd);
+const builtins = ["type", "echo", "exit"];
+
+function isBuiltin(cmd) {
+  return builtins.includes(cmd);
 }
 
 async function startShell() {
@@ -24,47 +27,53 @@ startShell();
 async function executeCommand(input) {
   const args = input.trim().split(" ");
   const command = args[0];
-  if (command === "exit" && args[1] == "0") return false;
+
+  if (command === "exit" && args[1] === "0") return false;
   else if (command === "echo") {
-    const output = input.slice(4, input.length).trim();
-    console.log(output);
+    console.log(args.slice(1).join(" "));
   } else if (command === "type") {
-    checkBuiltinType(args[1]);
+    const cmd = args[1];
+    if (!cmd) {
+      console.log("type: missing argument");
+      return true;
+    }
+    if (isBuiltin(cmd)) {
+      console.log(`${cmd} is a shell builtin`);
+    } else {
+      const { present, fullPath } = findExecutable(cmd);
+      if (present) console.log(`${cmd} is ${fullPath}`);
+      else console.log(`${cmd}: not found`);
+    }
   } else {
-    console.log(`${command}: command not found`);
+    const { present, fullPath } = findExecutable(command);
+    if (present) {
+      const child = spawn(command, args.slice(1), { stdio: "inherit" });
+
+      child.on("error", (err) => {
+        console.error(`Error: ${err.message}`);
+      });
+
+      child.on("close", () => {
+        rl.prompt();
+      });
+    } else {
+      console.log(`${command}: command not found`);
+    }
   }
   return true;
 }
 
-function checkBuiltinType(cmd) {
-  if (isCommand(cmd)) {
-    console.log(`${cmd} is a shell builtin`);
-    return;
-  }
-
+function findExecutable(cmd) {
   const pathDirs = process.env.PATH.split(":");
-  let present = false;
-  let fullPath = "";
-
   for (const dir of pathDirs) {
     try {
       const files = fs.readdirSync(dir);
-      for (const file of files) {
-        if (file === cmd) {
-          fullPath = path.join(dir, file);
-          present = true;
-          break;
-        }
+      if (files.includes(cmd)) {
+        return { present: true, fullPath: path.join(dir, cmd) };
       }
-      if (present) break;
     } catch (error) {
-      // Ignore errors
+      // Ignore errors like permission denied
     }
   }
-
-  if (present) {
-    console.log(`${cmd} is ${fullPath}`);
-  } else {
-    console.log(`${cmd}: not found`);
-  }
+  return { present: false, fullPath: null };
 }
