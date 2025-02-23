@@ -2,7 +2,7 @@ const readline = require("node:readline/promises");
 const path = require("node:path");
 const fs = require("node:fs");
 const { spawn } = require("child_process");
-
+const os = require("os");
 const rl = readline.createInterface({
   input: process.stdin,
   output: process.stdout,
@@ -49,7 +49,9 @@ async function executeCommand(input) {
   } else if (command === "cd") {
     const dir = args[1].trim();
     try {
-      const newDir = process.chdir(dir);
+      if (dir === "~") {
+        process.chdir(os.homedir());
+      } else process.chdir(dir);
     } catch (error) {
       console.log(`cd: ${dir}: No such file or directory`);
     }
