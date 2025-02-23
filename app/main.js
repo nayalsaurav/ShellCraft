@@ -5,7 +5,7 @@ const rl = readline.createInterface({
   output: process.stdout,
 });
 
-let commands = [];
+let commands = ["type", "echo", "exit"];
 function isCommand(cmd) {
   return commands.includes(cmd);
 }
@@ -27,7 +27,13 @@ async function executeCommand(input) {
   else if (command === "echo") {
     const output = input.slice(4, input.length).trim();
     console.log(output);
-  } else if (!isCommand(command)) {
+  } else if (command === "type") {
+    if (isCommand(args[1])) {
+      console.log(`${args[1]} is a shell builtin`);
+    } else {
+      console.log(`${args[1]}: not found`);
+    }
+  } else {
     console.log(`${command}: command not found`);
   }
   return true;
