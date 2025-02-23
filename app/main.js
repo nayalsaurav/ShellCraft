@@ -46,6 +46,13 @@ async function executeCommand(input) {
     }
   } else if (command === "pwd") {
     console.log(process.cwd());
+  } else if (command === "cd") {
+    const dir = args[1].trim();
+    try {
+      const newDir = process.chdir(dir);
+    } catch (error) {
+      console.log(`cd: ${dir}: No such file or directory`);
+    }
   } else {
     const { present, fullPath } = findExecutable(command);
     if (present) {
@@ -54,7 +61,7 @@ async function executeCommand(input) {
       });
 
       child.stdout.on("data", (data) => {
-        process.stdout.write(data); // Use write() instead of console.log() to avoid extra newline
+        process.stdout.write(data);
       });
 
       child.stderr.on("data", (data) => {
