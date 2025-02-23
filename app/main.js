@@ -24,7 +24,10 @@ async function executeCommand(input) {
   const args = input.trim().split(" ");
   const command = args[0];
   if (command === "exit" && args[1] == "0") return false;
-  if (!isCommand(command)) {
+  else if (command === "echo") {
+    const output = input.slice(4, input.length).trim();
+    console.log(output);
+  } else if (!isCommand(command)) {
     console.log(`${command}: command not found`);
   }
   return true;
