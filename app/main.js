@@ -49,8 +49,12 @@ async function executeCommand(input) {
   } else {
     const { present, fullPath } = findExecutable(command);
     if (present) {
-      const child = spawn(command, args.slice(1), { stdio: "inherit" });
-
+      const child = spawn(command, args.slice(1), {
+        stdio: "inherit pipe pipe",
+      });
+      child.stdout.on("data", (data) => {
+        console.log(data);
+      });
       child.on("error", (err) => {
         console.error(`Error: ${err.message}`);
       });
