@@ -8,7 +8,7 @@ const rl = readline.createInterface({
   output: process.stdout,
 });
 
-const builtins = ["type", "echo", "exit"];
+const builtins = ["type", "echo", "exit", "pwd"];
 
 function isBuiltin(cmd) {
   return builtins.includes(cmd);
@@ -44,6 +44,8 @@ async function executeCommand(input) {
       if (present) console.log(`${cmd} is ${fullPath}`);
       else console.log(`${cmd}: not found`);
     }
+  } else if (command === "pwd") {
+    console.log(process.cwd());
   } else {
     const { present, fullPath } = findExecutable(command);
     if (present) {
