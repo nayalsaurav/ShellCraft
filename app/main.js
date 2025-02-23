@@ -50,17 +50,19 @@ async function executeCommand(input) {
     const { present, fullPath } = findExecutable(command);
     if (present) {
       const child = spawn(command, args.slice(1), {
-        stdio: "inherit pipe pipe",
-      });
-      child.stdout.on("data", (data) => {
-        console.log(data);
-      });
-      child.on("error", (err) => {
-        console.error(`Error: ${err.message}`);
+        stdio: ["inherit", "pipe", "pipe"],
       });
 
-      child.on("close", () => {
-        rl.prompt();
+      child.stdout.on("data", (data) => {
+        process.stdout.write(data); // Use write() instead of console.log() to avoid extra newline
+      });
+
+      child.stderr.on("data", (data) => {
+        process.stderr.write(data);
+      });
+
+      return new Promise((resolve) => {
+        child.on("close", () => resolve(true));
       });
     } else {
       console.log(`${command}: command not found`);
