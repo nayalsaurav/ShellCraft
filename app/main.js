@@ -1,5 +1,6 @@
 const readline = require("node:readline/promises");
-
+const path = require("node:path");
+const fs = require("node:fs");
 const rl = readline.createInterface({
   input: process.stdin,
   output: process.stdout,
@@ -28,13 +29,42 @@ async function executeCommand(input) {
     const output = input.slice(4, input.length).trim();
     console.log(output);
   } else if (command === "type") {
-    if (isCommand(args[1])) {
-      console.log(`${args[1]} is a shell builtin`);
-    } else {
-      console.log(`${args[1]}: not found`);
-    }
+    checkBuiltinType(args[1]);
   } else {
     console.log(`${command}: command not found`);
   }
   return true;
+}
+
+function checkBuiltinType(cmd) {
+  if (isCommand(cmd)) {
+    console.log(`${cmd} is a shell builtin`);
+    return;
+  }
+
+  const pathDirs = process.env.PATH.split(":");
+  let present = false;
+  let fullPath = "";
+
+  for (const dir of pathDirs) {
+    try {
+      const files = fs.readdirSync(dir);
+      for (const file of files) {
+        if (file === cmd) {
+          fullPath = path.join(dir, file);
+          present = true;
+          break;
+        }
+      }
+      if (present) break;
+    } catch (error) {
+      // Ignore errors
+    }
+  }
+
+  if (present) {
+    console.log(`${cmd} is ${fullPath}`);
+  } else {
+    console.log(`${cmd}: not found`);
+  }
 }
