@@ -134,22 +134,3 @@ function executeFile(command, args) {
     // console.log(`child process exited with code ${code}`);
   });
 }
-
-function filePathHandle(t) {
-  let temp = [];
-  let str = "";
-  for (let x of t) {
-    if (x && x.trim() !== "") {
-      if (x.includes("/")) {
-        if (str.trim() !== "") {
-          temp.push(str);
-          str = "";
-        }
-        str += x;
-      } else {
-        str += " " + x;
-      }
-    }
-  }
-  return temp;
-}
