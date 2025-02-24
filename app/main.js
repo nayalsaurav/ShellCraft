@@ -3,6 +3,7 @@ const path = require("node:path");
 const fs = require("node:fs");
 const { spawn } = require("child_process");
 const os = require("os");
+const { stdout } = require("node:process");
 const rl = readline.createInterface({
   input: process.stdin,
   output: process.stdout,
@@ -30,7 +31,8 @@ async function executeCommand(input) {
 
   if (command === "exit" && args[1] === "0") return false;
   else if (command === "echo") {
-    console.log(args.slice(1).join(" "));
+    // console.log(args.slice(1).join(" "));
+    handleEchoCommand(args);
   } else if (command === "type") {
     const cmd = args[1];
     if (!cmd) {
@@ -55,24 +57,12 @@ async function executeCommand(input) {
     } catch (error) {
       console.log(`cd: ${dir}: No such file or directory`);
     }
+  } else if (command === "cat") {
+    handleCatCommand(args);
   } else {
     const { present, fullPath } = findExecutable(command);
     if (present) {
-      const child = spawn(command, args.slice(1), {
-        stdio: ["inherit", "pipe", "pipe"],
-      });
-
-      child.stdout.on("data", (data) => {
-        process.stdout.write(data);
-      });
-
-      child.stderr.on("data", (data) => {
-        process.stderr.write(data);
-      });
-
-      return new Promise((resolve) => {
-        child.on("close", () => resolve(true));
-      });
+      executeFile(command, args);
     } else {
       console.log(`${command}: command not found`);
     }
@@ -93,4 +83,73 @@ function findExecutable(cmd) {
     }
   }
   return { present: false, fullPath: null };
+}
+function splitCustom(str) {
+  const regex = /'[^']*'|[^']+/g; // Matches quoted parts OR unquoted parts
+  return str.match(regex) || [str]; // Returns array of matched parts
+}
+function handleEchoCommand(args) {
+  const res = handleCommand(args);
+  console.log(res);
+}
+
+function handleCommand(args) {
+  const input = splitCustom(args.slice(1).join(" "));
+  let res = "";
+  for (let p of input) {
+    if (p.startsWith("'") && p.endsWith("'")) {
+      // Remove surrounding single quotes but keep internal spaces
+      res += p.replaceAll("'", "");
+    } else {
+      // Trim and replace multiple spaces with a single space
+      res += p.replace(/\s+/g, " ");
+    }
+  }
+  return res;
+}
+
+function handleCatCommand(args) {
+  const inputString = args.slice(1).join(" ");
+  const regex = /'([^']*)'|\S+/g;
+  const files = [];
+
+  let match;
+  while ((match = regex.exec(inputString)) !== null) {
+    files.push(match[1] || match[0]); // Use quoted string content or unquoted word
+  }
+  // console.log(files);
+  files.forEach((file) => {
+    try {
+      const content = fs.readFileSync(file, "utf8");
+      process.stdout.write(content);
+    } catch (error) {
+      console.log(`cat: ${file}: No such file or directory`);
+    }
+  });
+}
+
+function executeFile(command, args) {
+  const child = spawn(command, args.slice(1), { stdio: "inherit" });
+  child.on("close", (code) => {
+    // console.log(`child process exited with code ${code}`);
+  });
+}
+
+function filePathHandle(t) {
+  let temp = [];
+  let str = "";
+  for (let x of t) {
+    if (x && x.trim() !== "") {
+      if (x.includes("/")) {
+        if (str.trim() !== "") {
+          temp.push(str);
+          str = "";
+        }
+        str += x;
+      } else {
+        str += " " + x;
+      }
+    }
+  }
+  return temp;
 }
