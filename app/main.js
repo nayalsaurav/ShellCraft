@@ -100,9 +100,9 @@ function handleCdCommand(args) {
   return true;
 }
 
-function handleCatCommand(args) {
+async function handleCatCommand(args) {
   const files = parseQuotedString(args);
-  handleExternalCommand("cat", ["cat", ...files]);
+  await handleExternalCommand("cat", ["cat", ...files]);
   return true;
 }
 
