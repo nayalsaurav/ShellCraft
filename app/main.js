@@ -21,21 +21,33 @@ function parseQuotedString(args) {
   let inDoubleQuote = false;
   let inSingleQuote = false;
   let escapeNext = false;
-  // const escapeSequences = [];
+  let doubleEscapeNext = false;
+  const escapeSequences = ["\\", "$", '"', "\n"];
   // Parse character by character
   for (let i = 0; i < fullCommand.length; i++) {
     const char = fullCommand[i];
-    if (escapeNext && !inDoubleQuote && !inSingleQuote) {
+    if (escapeNext && !inSingleQuote && !inDoubleQuote) {
       current += char;
       escapeNext = false;
       continue;
     }
+    if (doubleEscapeNext) {
+      if (escapeSequences.includes(char)) {
+        current += char;
+      } else current += "\\" + char;
+      doubleEscapeNext = false;
+      continue;
+    }
 
-    // If backslash is encountered, set escapeNext flag and continue
-    if (char === "\\" && !inDoubleQuote && !inSingleQuote) {
+    if (char === "\\" && !inSingleQuote && !inDoubleQuote) {
       escapeNext = true;
       continue;
     }
+    if (char === "\\" && inDoubleQuote) {
+      doubleEscapeNext = true;
+      continue;
+    }
+
     if (char === '"' && !inSingleQuote) {
       inDoubleQuote = !inDoubleQuote;
       continue;
