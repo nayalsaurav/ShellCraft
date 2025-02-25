@@ -3,7 +3,6 @@ const path = require("node:path");
 const fs = require("node:fs");
 const { spawn } = require("child_process");
 const os = require("os");
-
 const rl = readline.createInterface({
   input: process.stdin,
   output: process.stdout,
@@ -15,13 +14,54 @@ function isBuiltin(cmd) {
   return builtins.includes(cmd);
 }
 
-async function startShell() {
-  while (true) {
-    const answer = await rl.question("$ ");
-    const shouldContinue = await executeCommand(answer);
-    if (!shouldContinue) break;
+function parseQuotedString(args) {
+  const fullCommand = args.slice(1).join(" ");
+  const parts = [];
+  let current = "";
+  let inDoubleQuote = false;
+  let inSingleQuote = false;
+  let escapeNext = false;
+  // const escapeSequences = [];
+  // Parse character by character
+  for (let i = 0; i < fullCommand.length; i++) {
+    const char = fullCommand[i];
+    if (escapeNext && !inDoubleQuote && !inSingleQuote) {
+      current += char;
+      escapeNext = false;
+      continue;
+    }
+
+    // If backslash is encountered, set escapeNext flag and continue
+    if (char === "\\" && !inDoubleQuote && !inSingleQuote) {
+      escapeNext = true;
+      continue;
+    }
+    if (char === '"' && !inSingleQuote) {
+      inDoubleQuote = !inDoubleQuote;
+      continue;
+    }
+
+    if (char === "'" && !inDoubleQuote) {
+      inSingleQuote = !inSingleQuote;
+      continue;
+    }
+
+    if (char === " " && !inDoubleQuote && !inSingleQuote) {
+      if (current) {
+        parts.push(current);
+        current = "";
+      }
+      continue;
+    }
+
+    current += char;
   }
-  rl.close();
+
+  // Add the last part if there is one
+  if (current) {
+    parts.push(current);
+  }
+  return parts;
 }
 
 function findExecutable(cmd) {
@@ -101,7 +141,7 @@ function handleCdCommand(args) {
 }
 
 async function handleCatCommand(args) {
-  const files = parseQuotedString(args);
+  let files = parseQuotedString(args);
   await handleExternalCommand("cat", ["cat", ...files]);
   return true;
 }
@@ -146,44 +186,13 @@ async function executeCommand(input) {
   }
 }
 
-function parseQuotedString(args) {
-  const fullCommand = args.slice(1).join(" ");
-  const parts = [];
-  let current = "";
-  let inDoubleQuote = false;
-  let inSingleQuote = false;
-
-  // Parse character by character
-  for (let i = 0; i < fullCommand.length; i++) {
-    const char = fullCommand[i];
-
-    if (char === '"' && !inSingleQuote) {
-      inDoubleQuote = !inDoubleQuote;
-      continue;
-    }
-
-    if (char === "'" && !inDoubleQuote) {
-      inSingleQuote = !inSingleQuote;
-      continue;
-    }
-
-    if (char === " " && !inDoubleQuote && !inSingleQuote) {
-      if (current) {
-        parts.push(current);
-        current = "";
-      }
-      continue;
-    }
-
-    current += char;
+async function startShell() {
+  while (true) {
+    const answer = await rl.question("$ ");
+    const shouldContinue = await executeCommand(answer);
+    if (!shouldContinue) break;
   }
-
-  // Add the last part if there is one
-  if (current) {
-    parts.push(current);
-  }
-  return parts;
+  rl.close();
 }
-
 // Start the shell
 startShell();
