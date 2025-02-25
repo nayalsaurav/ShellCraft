@@ -3,6 +3,7 @@ const path = require("node:path");
 const fs = require("node:fs");
 const { spawn } = require("child_process");
 const os = require("os");
+const { inherits } = require("node:util");
 const rl = readline.createInterface({
   input: process.stdin,
   output: process.stdout,
@@ -14,7 +15,7 @@ function isBuiltin(cmd) {
   return builtins.includes(cmd);
 }
 
-function parseQuotedString(args) {
+function parseString(args) {
   const fullCommand = args.join(" ");
   const parts = [];
   let current = "";
@@ -107,7 +108,7 @@ function handleExitCommand(args) {
 }
 
 function handleEchoCommand(args) {
-  const parsedString = parseQuotedString(args).slice(1).join(" ");
+  const parsedString = parseString(args).slice(1).join(" ");
   // Join with single spaces and output
   console.log(parsedString);
   return true;
@@ -153,26 +154,45 @@ function handleCdCommand(args) {
 }
 
 async function handleCatCommand(args) {
-  // let files = parseQuotedString(args);
   await handleExternalCommand(args);
   return true;
 }
 
 function handleExternalCommand(args) {
-  args = parseQuotedString(args);
-  // console.log(args);
+  args = parseString(args);
+
+  // Find redirection symbol
+  const idx = args.findIndex((arg) => arg === ">" || arg === "1>");
+
+  if (idx !== -1 && idx + 1 < args.length) {
+    const command = args.slice(0, idx);
+    const filePath = args[idx + 1];
+
+    return new Promise((resolve) => {
+      const child = spawn(command[0], command.slice(1), {
+        stdio: ["ignore", fs.openSync(filePath, "w"), "inherit"],
+      });
+      child.on("error", () => {
+        console.log(`${command.slice(2)}: No such file or directory`);
+        resolve(true);
+      });
+
+      child.on("close", (code) => {
+        resolve(true);
+      });
+    });
+  }
+
   return new Promise((resolve) => {
     const child = spawn(args[0], args.slice(1), {
       stdio: "inherit",
     });
 
-    // Handle command not found error
     child.on("error", () => {
       console.log(`${args[0]}: command not found`);
       resolve(true);
     });
 
-    // Resolve when the process exits
     child.on("close", (code) => {
       resolve(true);
     });
@@ -182,6 +202,7 @@ function handleExternalCommand(args) {
 async function executeCommand(input) {
   const args = input.trim().split(" ");
   const command = args[0];
+  if (redirection(args) != -1) return await handleExternalCommand(args);
   // Command router
   switch (command) {
     case "exit":
@@ -211,3 +232,8 @@ async function startShell() {
 }
 // Start the shell
 startShell();
+
+function redirection(args) {
+  const idx = args.findIndex((arg) => arg === ">" || arg === "1>");
+  return idx;
+}
