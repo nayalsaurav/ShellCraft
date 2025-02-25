@@ -15,7 +15,7 @@ function isBuiltin(cmd) {
 }
 
 function parseQuotedString(args) {
-  const fullCommand = args.slice(1).join(" ");
+  const fullCommand = args.join(" ");
   const parts = [];
   let current = "";
   let inDoubleQuote = false;
@@ -107,7 +107,7 @@ function handleExitCommand(args) {
 }
 
 function handleEchoCommand(args) {
-  const parsedString = parseQuotedString(args).join(" ");
+  const parsedString = parseQuotedString(args).slice(1).join(" ");
   // Join with single spaces and output
   console.log(parsedString);
   return true;
@@ -153,27 +153,30 @@ function handleCdCommand(args) {
 }
 
 async function handleCatCommand(args) {
-  let files = parseQuotedString(args);
-  await handleExternalCommand("cat", ["cat", ...files]);
+  // let files = parseQuotedString(args);
+  await handleExternalCommand(args);
   return true;
 }
 
-function handleExternalCommand(command, args) {
-  const { present, fullPath } = findExecutable(command);
-  if (present) {
-    return new Promise((resolve) => {
-      const child = spawn(command, args.slice(1), {
-        stdio: "inherit",
-      });
-
-      child.on("close", (code) => {
-        resolve(true);
-      });
+function handleExternalCommand(args) {
+  args = parseQuotedString(args);
+  // console.log(args);
+  return new Promise((resolve) => {
+    const child = spawn(args[0], args.slice(1), {
+      stdio: "inherit",
     });
-  } else {
-    console.log(`${command}: command not found`);
-    return true;
-  }
+
+    // Handle command not found error
+    child.on("error", () => {
+      console.log(`${args[0]}: command not found`);
+      resolve(true);
+    });
+
+    // Resolve when the process exits
+    child.on("close", (code) => {
+      resolve(true);
+    });
+  });
 }
 
 async function executeCommand(input) {
@@ -194,7 +197,7 @@ async function executeCommand(input) {
     case "cat":
       return handleCatCommand(args);
     default:
-      return await handleExternalCommand(command, args);
+      return await handleExternalCommand(args);
   }
 }
 
