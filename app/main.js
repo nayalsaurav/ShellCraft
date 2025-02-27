@@ -3,20 +3,26 @@ const path = require("node:path");
 const fs = require("node:fs");
 const { spawn } = require("child_process");
 const os = require("os");
-const { inherits } = require("node:util");
+
 const rl = readline.createInterface({
   input: process.stdin,
   output: process.stdout,
 });
 
-const builtins = ["type", "echo", "exit", "pwd"];
+const builtins = ["type", "echo", "exit", "pwd", "cd"];
 
 function isBuiltin(cmd) {
   return builtins.includes(cmd);
 }
 
-function parseString(args) {
-  const fullCommand = args.join(" ");
+function redirection(tokens) {
+  const stdoutIdx = tokens.findIndex((arg) => arg === ">" || arg === "1>");
+  const stderrIdx = tokens.findIndex((arg) => arg === "2>");
+  return { stdoutIdx, stderrIdx };
+}
+
+function parseString(inputArray) {
+  const fullCommand = inputArray.join(" ");
   const parts = [];
   let current = "";
   let inDoubleQuote = false;
@@ -24,9 +30,10 @@ function parseString(args) {
   let escapeNext = false;
   let doubleEscapeNext = false;
   const escapeSequences = ["\\", "$", '"', "\n"];
-  // Parse character by character
+
   for (let i = 0; i < fullCommand.length; i++) {
     const char = fullCommand[i];
+
     if (escapeNext && !inSingleQuote && !inDoubleQuote) {
       current += char;
       escapeNext = false;
@@ -70,7 +77,6 @@ function parseString(args) {
     current += char;
   }
 
-  // Add the last part if there is one
   if (current) {
     parts.push(current);
   }
@@ -89,9 +95,7 @@ function findExecutable(cmd) {
           fullPath: path.join(dir, cmd),
         };
       }
-    } catch (error) {
-      // Ignore errors like permission denied
-    }
+    } catch (error) {}
   }
 
   return {
@@ -100,22 +104,56 @@ function findExecutable(cmd) {
   };
 }
 
-function handleExitCommand(args) {
-  if (args[1] === "0") {
-    return false;
+function handleExitCommand(tokens) {
+  return tokens[1] === "0" ? false : true;
+}
+
+async function handleEchoCommand(tokens, stdoutIdx, stderrIdx) {
+  let outputTokens = tokens.slice(1);
+  let stdoutFile = null;
+  let stderrFile = null;
+
+  if (stdoutIdx !== -1) {
+    stdoutFile = tokens[stdoutIdx + 1];
+    outputTokens = tokens.slice(1, stdoutIdx);
+  } else if (stderrIdx !== -1) {
+    stderrFile = tokens[stderrIdx + 1];
+    outputTokens = tokens.slice(1, stderrIdx);
   }
+
+  const output = outputTokens.join(" ");
+
+  if (stdoutFile) {
+    // console.log({ output, stdoutFile, stdoutIdx, tokens });
+    const dir = path.dirname(stdoutFile);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(stdoutFile, output + "\n");
+    return true; // Prevent printing to console
+  }
+
+  if (stderrFile) {
+    const dir = path.dirname(stderrFile);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(stderrFile, ""); // Writing actual output
+    console.log(output);
+    return true; // Prevent printing to console
+  }
+
+  // Only print if no redirection
+  console.log(output);
   return true;
 }
 
-function handleEchoCommand(args) {
-  const parsedString = parseString(args).slice(1).join(" ");
-  // Join with single spaces and output
-  console.log(parsedString);
-  return true;
+// First, update the redirection function to handle both > and 1> as stdout
+
+function redirection(tokens) {
+  const stdoutIdx = tokens.findIndex((arg) => arg === "1>" || arg === ">");
+  const stderrIdx = tokens.findIndex((arg) => arg === "2>");
+  return { stdoutIdx, stderrIdx };
 }
 
-function handleTypeCommand(args) {
-  const cmd = args[1];
+function handleTypeCommand(tokens) {
+  const cmd = tokens[1];
   if (!cmd) {
     console.log("type: missing argument");
     return true;
@@ -139,86 +177,91 @@ function handlePwdCommand() {
   return true;
 }
 
-function handleCdCommand(args) {
-  const dir = args[1].trim();
+function handleCdCommand(tokens) {
+  const dir = tokens[1] ? tokens[1].trim() : "~";
   try {
-    if (dir === "~") {
-      process.chdir(os.homedir());
-    } else {
-      process.chdir(dir);
-    }
+    process.chdir(dir === "~" ? os.homedir() : dir);
   } catch (error) {
     console.log(`cd: ${dir}: No such file or directory`);
   }
   return true;
 }
 
-async function handleCatCommand(args) {
-  await handleExternalCommand(args);
-  return true;
-}
+async function handleExternalCommand(tokens) {
+  const { stdoutIdx, stderrIdx } = redirection(tokens);
 
-function handleExternalCommand(args) {
-  args = parseString(args);
+  let commandTokens = tokens;
+  let stdoutStream = "inherit";
+  let stderrStream = "inherit";
 
-  // Find redirection symbol
-  const idx = args.findIndex((arg) => arg === ">" || arg === "1>");
+  // Handle stdout redirection
+  if (stdoutIdx !== -1 && stdoutIdx + 1 < tokens.length) {
+    const filePath = tokens[stdoutIdx + 1];
+    const dir = path.dirname(filePath);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    stdoutStream = fs.openSync(filePath, "w");
+    commandTokens = tokens.slice(0, stdoutIdx);
+  }
 
-  if (idx !== -1 && idx + 1 < args.length) {
-    const command = args.slice(0, idx);
-    const filePath = args[idx + 1];
-
-    return new Promise((resolve) => {
-      const child = spawn(command[0], command.slice(1), {
-        stdio: ["ignore", fs.openSync(filePath, "w"), "inherit"],
-      });
-      child.on("error", () => {
-        console.log(`${command.slice(2)}: No such file or directory`);
-        resolve(true);
-      });
-
-      child.on("close", (code) => {
-        resolve(true);
-      });
-    });
+  // Handle stderr redirection
+  if (stderrIdx !== -1 && stderrIdx + 1 < tokens.length) {
+    const filePath = tokens[stderrIdx + 1];
+    const dir = path.dirname(filePath);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    stderrStream = fs.openSync(filePath, "w");
+    commandTokens = commandTokens.slice(0, stderrIdx);
   }
 
   return new Promise((resolve) => {
-    const child = spawn(args[0], args.slice(1), {
-      stdio: "inherit",
+    const [cmd, ...args] = commandTokens;
+    if (!cmd) {
+      resolve(true);
+      return;
+    }
+
+    const child = spawn(cmd, args, {
+      stdio: ["ignore", stdoutStream, stderrStream],
     });
 
     child.on("error", () => {
-      console.log(`${args[0]}: command not found`);
+      console.log(`${cmd}: command not found`);
+      if (stdoutStream !== "inherit") fs.closeSync(stdoutStream);
+      if (stderrStream !== "inherit") fs.closeSync(stderrStream);
       resolve(true);
     });
 
-    child.on("close", (code) => {
+    child.on("close", () => {
+      if (stdoutStream !== "inherit") fs.closeSync(stdoutStream);
+      if (stderrStream !== "inherit") fs.closeSync(stderrStream);
       resolve(true);
     });
   });
 }
 
 async function executeCommand(input) {
-  const args = input.trim().split(" ");
-  const command = args[0];
-  if (redirection(args) != -1) return await handleExternalCommand(args);
-  // Command router
-  switch (command) {
-    case "exit":
-      return handleExitCommand(args);
-    case "echo":
-      return handleEchoCommand(args);
-    case "type":
-      return handleTypeCommand(args);
-    case "pwd":
-      return handlePwdCommand();
-    case "cd":
-      return handleCdCommand(args);
-    case "cat":
-      return handleCatCommand(args);
-    default:
-      return await handleExternalCommand(args);
+  const tokens = parseString([input]);
+  if (tokens.length === 0) return true;
+
+  const command = tokens[0];
+  const { stdoutIdx, stderrIdx } = redirection(tokens);
+
+  if (isBuiltin(command)) {
+    switch (command) {
+      case "exit":
+        return handleExitCommand(tokens);
+      case "echo":
+        return handleEchoCommand(tokens, stdoutIdx, stderrIdx);
+      case "type":
+        return handleTypeCommand(tokens);
+      case "pwd":
+        return handlePwdCommand();
+      case "cd":
+        return handleCdCommand(tokens);
+      default:
+        return await handleExternalCommand(tokens);
+    }
+  } else {
+    return await handleExternalCommand(tokens);
   }
 }
 
@@ -230,10 +273,5 @@ async function startShell() {
   }
   rl.close();
 }
-// Start the shell
-startShell();
 
-function redirection(args) {
-  const idx = args.findIndex((arg) => arg === ">" || arg === "1>");
-  return idx;
-}
+startShell();
