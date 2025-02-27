@@ -17,8 +17,12 @@ function isBuiltin(cmd) {
 
 function redirection(tokens) {
   const stdoutIdx = tokens.findIndex((arg) => arg === ">" || arg === "1>");
+  const stdoutAppendIdx = tokens.findIndex(
+    (arg) => arg === ">>" || arg === "1>>"
+  );
   const stderrIdx = tokens.findIndex((arg) => arg === "2>");
-  return { stdoutIdx, stderrIdx };
+  const stderrAppendIdx = tokens.findIndex((arg) => arg === "2>>");
+  return { stdoutIdx, stderrIdx, stderrAppendIdx, stdoutAppendIdx };
 }
 
 function parseString(inputArray) {
@@ -108,10 +112,13 @@ function handleExitCommand(tokens) {
   return tokens[1] === "0" ? false : true;
 }
 
-async function handleEchoCommand(tokens, stdoutIdx, stderrIdx) {
+async function handleEchoCommand(tokens) {
+  const { stdoutIdx, stderrIdx, stdoutAppendIdx, stderrAppendIdx } =
+    redirection(tokens);
   let outputTokens = tokens.slice(1);
   let stdoutFile = null;
   let stderrFile = null;
+  let appendMode = false;
 
   if (stdoutIdx !== -1) {
     stdoutFile = tokens[stdoutIdx + 1];
@@ -119,22 +126,31 @@ async function handleEchoCommand(tokens, stdoutIdx, stderrIdx) {
   } else if (stderrIdx !== -1) {
     stderrFile = tokens[stderrIdx + 1];
     outputTokens = tokens.slice(1, stderrIdx);
+  } else if (stdoutAppendIdx !== -1) {
+    stdoutFile = tokens[stdoutAppendIdx + 1];
+    outputTokens = tokens.slice(1, stdoutAppendIdx);
+    appendMode = true;
+  } else if (stderrAppendIdx !== -1) {
+    stderrFile = tokens[stderrAppendIdx + 1];
+    outputTokens = tokens.slice(1, stderrAppendIdx);
+    appendMode = true;
   }
 
   const output = outputTokens.join(" ");
 
   if (stdoutFile) {
-    // console.log({ output, stdoutFile, stdoutIdx, tokens });
     const dir = path.dirname(stdoutFile);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(stdoutFile, output + "\n");
+    fs.writeFileSync(stdoutFile, output + "\n", {
+      flag: appendMode ? "a" : "w",
+    });
     return true; // Prevent printing to console
   }
 
   if (stderrFile) {
     const dir = path.dirname(stderrFile);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(stderrFile, ""); // Writing actual output
+    fs.writeFileSync(stderrFile, "");
     console.log(output);
     return true; // Prevent printing to console
   }
@@ -145,12 +161,6 @@ async function handleEchoCommand(tokens, stdoutIdx, stderrIdx) {
 }
 
 // First, update the redirection function to handle both > and 1> as stdout
-
-function redirection(tokens) {
-  const stdoutIdx = tokens.findIndex((arg) => arg === "1>" || arg === ">");
-  const stderrIdx = tokens.findIndex((arg) => arg === "2>");
-  return { stdoutIdx, stderrIdx };
-}
 
 function handleTypeCommand(tokens) {
   const cmd = tokens[1];
@@ -188,7 +198,8 @@ function handleCdCommand(tokens) {
 }
 
 async function handleExternalCommand(tokens) {
-  const { stdoutIdx, stderrIdx } = redirection(tokens);
+  const { stdoutIdx, stderrIdx, stdoutAppendIdx, stderrAppendIdx } =
+    redirection(tokens);
 
   let commandTokens = tokens;
   let stdoutStream = "inherit";
@@ -210,6 +221,22 @@ async function handleExternalCommand(tokens) {
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     stderrStream = fs.openSync(filePath, "w");
     commandTokens = commandTokens.slice(0, stderrIdx);
+  }
+
+  if (stdoutAppendIdx !== -1 && stdoutAppendIdx + 1 < tokens.length) {
+    const filePath = tokens[stdoutAppendIdx + 1];
+    const dir = path.dirname(filePath);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    stdoutStream = fs.openSync(filePath, "a");
+    commandTokens = tokens.slice(0, stdoutAppendIdx);
+  }
+
+  if (stderrAppendIdx !== -1 && stderrAppendIdx + 1 < tokens.length) {
+    const filePath = tokens[stderrAppendIdx + 1];
+    const dir = path.dirname(filePath);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    stderrStream = fs.openSync(filePath, "a");
+    commandTokens = commandTokens.slice(0, stderrAppendIdx);
   }
 
   return new Promise((resolve) => {
@@ -243,14 +270,12 @@ async function executeCommand(input) {
   if (tokens.length === 0) return true;
 
   const command = tokens[0];
-  const { stdoutIdx, stderrIdx } = redirection(tokens);
-
   if (isBuiltin(command)) {
     switch (command) {
       case "exit":
         return handleExitCommand(tokens);
       case "echo":
-        return handleEchoCommand(tokens, stdoutIdx, stderrIdx);
+        return handleEchoCommand(tokens);
       case "type":
         return handleTypeCommand(tokens);
       case "pwd":
