@@ -10,6 +10,9 @@ const rl = readline.createInterface({
   completer: (line) => {
     const completions = ["echo ", "exit ", "pwd ", "cd ", "type "];
     const hits = completions.filter((c) => c.startsWith(line));
+    if (hits.length === 0) {
+      process.stdout.write("\u0007"); // Emit bell character
+    }
     return [hits.length ? hits : completions, line];
   },
 });
