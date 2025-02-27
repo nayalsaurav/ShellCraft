@@ -7,8 +7,12 @@ const os = require("os");
 const rl = readline.createInterface({
   input: process.stdin,
   output: process.stdout,
+  completer: (line) => {
+    const completions = ["echo ", "exit ", "pwd ", "cd ", "type "];
+    const hits = completions.filter((c) => c.startsWith(line));
+    return [hits.length ? hits : completions, line];
+  },
 });
-
 const builtins = ["type", "echo", "exit", "pwd", "cd"];
 
 function isBuiltin(cmd) {
@@ -268,7 +272,6 @@ async function handleExternalCommand(tokens) {
 async function executeCommand(input) {
   const tokens = parseString([input]);
   if (tokens.length === 0) return true;
-
   const command = tokens[0];
   if (isBuiltin(command)) {
     switch (command) {
@@ -300,3 +303,8 @@ async function startShell() {
 }
 
 startShell();
+
+// process.stdin.on("keypress", (str, key) => {
+//   console.log(`You pressed: ${str}`);
+//   console.log(key);
+// });
