@@ -4,29 +4,97 @@ const fs = require("node:fs");
 const { spawn } = require("child_process");
 const os = require("os");
 
+let lastTabLine = "";
+let tabPressCount = 0;
+
 const rl = readline.createInterface({
   input: process.stdin,
   output: process.stdout,
-  completer: (line) => {
-    const path = process.env.PATH.split(":");
-    const completions = ["echo", "exit", "pwd", "cd", "type"];
-    path.forEach((dir) => {
-      try {
-        const files = fs.readdirSync(dir);
-        completions.push(...files);
-      } catch (err) {
-        // Ignore errors reading directories
-      }
-    });
-    const hits = completions
-      .filter((c) => c.startsWith(line))
-      .map((c) => (c += " "));
-    if (hits.length === 0) {
-      process.stdout.write("\u0007"); // Emit bell character
+  completer: function (line) {
+    // List of built-in commands for autocompletion
+    const builtins = ["echo", "exit", "cd", "pwd", "type"];
+
+    // Trim any leading/trailing whitespace
+    const trimmedLine = line.trim();
+
+    // Check if this is a repeated tab press
+    if (trimmedLine === lastTabLine) {
+      tabPressCount++;
+    } else {
+      // Reset counter for new input
+      tabPressCount = 1;
+      lastTabLine = trimmedLine;
     }
-    return [hits.length ? hits : completions, line];
+
+    // If the line is empty, return all builtins
+    if (trimmedLine === "") {
+      return [builtins.sort(), line];
+    }
+
+    // Filter builtin commands that start with the current input
+    const builtinHits = builtins.filter((builtin) =>
+      builtin.startsWith(trimmedLine)
+    );
+
+    // Find executables in PATH that start with the current input
+    const pathExecutables = findExecutablesInPath(trimmedLine);
+
+    // Combine builtin and executable matches
+    const allHits = [...builtinHits, ...pathExecutables];
+
+    // Remove duplicates and sort
+    const uniqueHits = [...new Set(allHits)].sort();
+
+    // If there are no matches, ring the bell
+    if (uniqueHits.length === 0) {
+      process.stdout.write("\u0007"); // Bell character
+      return [[], line]; // Return the original line unchanged
+    }
+
+    // If there's exactly one match, return it plus a space
+    if (uniqueHits.length === 1) {
+      tabPressCount = 0; // Reset counter after completion
+      return [[uniqueHits[0]], uniqueHits[0] + " "];
+    } else {
+      // Multiple matches
+      if (tabPressCount === 1) {
+        // First tab press: only ring the bell
+        process.stdout.write("\u0007"); // Bell character
+        return [[], line]; // Don't change the line
+      } else if (tabPressCount >= 2) {
+        // Second tab press: display all matching executables
+        console.log(); // Move to new line
+        console.log(uniqueHits.join("  ")); // Show matches separated by two spaces
+
+        tabPressCount = 0; // Reset counter after displaying completions
+        return [[], line]; // Don't modify the line again
+      }
+
+      return [[], line]; // Default case, don't change the line
+    }
   },
 });
+
+function findExecutablesInPath(prefix) {
+  const executables = [];
+  const pathDirs = process.env.PATH.split(path.delimiter);
+
+  pathDirs.forEach((dir) => {
+    try {
+      const files = fs.readdirSync(dir);
+      files.forEach((file) => {
+        if (file.startsWith(prefix)) {
+          executables.push(file);
+        }
+      });
+    } catch (err) {
+      // Ignore errors reading directories
+    }
+  });
+
+  return executables.sort();
+}
+
 const builtins = ["type", "echo", "exit", "pwd", "cd"];
 
 function isBuiltin(cmd) {
@@ -106,7 +174,7 @@ function parseString(inputArray) {
 }
 
 function findExecutable(cmd) {
-  const pathDirs = process.env.PATH.split(":");
+  const pathDirs = process.env.PATH.split(path.delimiter);
 
   for (const dir of pathDirs) {
     try {
@@ -307,6 +375,8 @@ async function startShell() {
   while (true) {
     const answer = await rl.question("$ ");
     const shouldContinue = await executeCommand(answer);
+    lastTabLine = "";
+    tabPressCount = 0;
     if (!shouldContinue) break;
   }
   rl.close();
