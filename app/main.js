@@ -8,8 +8,19 @@ const rl = readline.createInterface({
   input: process.stdin,
   output: process.stdout,
   completer: (line) => {
-    const completions = ["echo ", "exit ", "pwd ", "cd ", "type "];
-    const hits = completions.filter((c) => c.startsWith(line));
+    const path = process.env.PATH.split(":");
+    const completions = ["echo", "exit", "pwd", "cd", "type"];
+    path.forEach((dir) => {
+      try {
+        const files = fs.readdirSync(dir);
+        completions.push(...files);
+      } catch (err) {
+        // Ignore errors reading directories
+      }
+    });
+    const hits = completions
+      .filter((c) => c.startsWith(line))
+      .map((c) => (c += " "));
     if (hits.length === 0) {
       process.stdout.write("\u0007"); // Emit bell character
     }
@@ -151,7 +162,7 @@ async function handleEchoCommand(tokens) {
     fs.writeFileSync(stdoutFile, output + "\n", {
       flag: appendMode ? "a" : "w",
     });
-    return true; // Prevent printing to console
+    return true;
   }
 
   if (stderrFile) {
@@ -159,15 +170,11 @@ async function handleEchoCommand(tokens) {
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(stderrFile, "");
     console.log(output);
-    return true; // Prevent printing to console
+    return true;
   }
-
-  // Only print if no redirection
   console.log(output);
   return true;
 }
-
-// First, update the redirection function to handle both > and 1> as stdout
 
 function handleTypeCommand(tokens) {
   const cmd = tokens[1];
@@ -306,8 +313,3 @@ async function startShell() {
 }
 
 startShell();
-
-// process.stdin.on("keypress", (str, key) => {
-//   console.log(`You pressed: ${str}`);
-//   console.log(key);
-// });
